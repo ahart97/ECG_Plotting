@@ -56,6 +56,8 @@ def create_chart_plots(ecg: np.ndarray, fs: float, save_path: str, title: str, c
     ecg_strip_means = np.nanmean(ecg_strip, 0)
     ecg_strip = ecg_strip - ecg_strip_means
 
+    #TODO: Need to find a way to iterate through these
+
     ecg_strip_chart = ecg_strip
 
     ecg_offsets = row_offsets[:ecg_strip_chart.shape[-1]]
@@ -131,4 +133,4 @@ if __name__ == '__main__':
     signal = PickleLoad(os.path.join(save_dir, 'test_signal.pickle'))
     fs = PickleLoad(os.path.join(save_dir, 'test_fs.pickle'))
 
-    create_chart_plots(signal, fs, save_dir, 'test', chart_width=375, chart_height=20)
+    create_chart_plots(signal, fs, save_dir, 'test', chart_width=375, chart_height=int(20*len(signal)/(15*fs)))

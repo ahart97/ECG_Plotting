@@ -60,7 +60,7 @@ class ECGDictionary():
 
             start_idx = stop_idx+1
 
-        #TODO: Do we want pre-processed or raw ECG
+        #TODO: Do we want pre-processed or raw ECG - will start with raw
 
     def SampleDistribution(self):
         """
@@ -75,6 +75,12 @@ class ECGDictionary():
             max_check = SNR_max > SNR_range[0] and SNR_max <= SNR_range[1]
 
             eligible = avg_check and min_check and max_check
+            return eligible
+
+        def RandomSelect(eligible_values):
+            #Randomly sample the good indices
+            selected_bout = pd.DataFrame(eligible_values, columns=list(self.ECG_dictionary.keys())).sample(random_state=self.random_state)
+            return selected_bout.to_dict()
 
         self.ECG_sample_dictionary = {'bout_code': [], 'signal_dirs': [], 'fs': [], 'start_idx': [], 'end_idx': [], 'SNR_avg': [], 'SNR_min': [], 'SNR_max': []}
 
@@ -82,23 +88,32 @@ class ECGDictionary():
         num_slides = 50
         num_plots = num_slides*6
 
-        SNR_ranges = [(-5,10), (10,15), (15,20), (20,30), (30,100)]
+        #Smital cutoffs are 5 and 18 dB
+        #15 to 18 is really that interesting range
+        #1 to 22 ish, unifrom bins and the uniform distribution 
+        SNR_ranges = []
+        for ii in range(22):
+            SNR_ranges.append((ii+1,ii+3))
 
         for ii in range(num_plots):
             #Find the SNR range for this iteration
-            #TODO: Define the p for the distribution
-            SNR_range = np.random.choice(SNR_ranges, p =[1,1,1,1,1])
+            #Weighting everything evenly
+            SNR_range = np.random.choice(SNR_ranges)
 
             #Find the indicies that are good based on the SNR range
             SNR_eligibility = FindSNREligible(self.ECG_dictionary['SNR_avg'], self.ECG_dictionary['SNR_min'], self.ECG_dictionary['SNR_max'], SNR_range)
 
             eligible_values = np.array(list(self.ECG_dictionary.values()))[SNR_eligibility]
 
-            #Randomly sample the good indices
-            selected_bout = pd.DataFrame(eligible_values, columns=list(self.ECG_dictionary.keys())).sample(random_state=self.random_state)
+            #Sample from the bouts within the bin
+            selected_bout = RandomSelect(eligible_values)
+
+            #Keep sampling until a bout is found that is not in the ECG_sample_directory already
+            while selected_bout['bout_code'] in self.ECG_sample_dictionary['bout_code']:
+                selected_bout = RandomSelect()
 
             #Add the selected bout to the sample_dictionary
-            self.mergeDictionary(selected_bout.to_dict())
+            self.mergeDictionary(selected_bout)
 
 
     def mergeDictionary(self, dict_2):
@@ -159,8 +174,6 @@ class ECGDictionary():
 
 if __name__ == '__main__':
 
-    #TODO: Run through everything
-
     #Set the random seed (can have multiple variations)
     random_state = 1
     test_code = chr(random_state)
@@ -170,17 +183,22 @@ if __name__ == '__main__':
 
     signals_dir = r'Y:\NiMBaLWEAR\OND09\wearables\device_edf_cropped'
 
-    ecg_signal_paths = []
-    for file in os.listdir(signals_dir):
-        if 'Chest.edf' in file:
-            ecg_signal_paths.append(os.path.join(signals_dir, file))
+    #Not sure what SBH and TWH are???
+    try:
+        ECGFinder.ECG_dictionary = pd.read_csv(os.path.join('ECG_Plotting', 'Signal Details', 'ecg_details.csv')).to_dict()
+    except:
+        ecg_signal_paths = []
+        for file in os.listdir(signals_dir):
+            if 'Chest.edf' in file and 'SBH' not in file and 'TWH' not in file:
+                ecg_signal_paths.append(os.path.join(signals_dir, file))
 
-    for ii, signal in enumerate(ecg_signal_paths):
-        ECGFinder.SampleSignal(ii, signal)
+        for ii, signal in enumerate(ecg_signal_paths):
+            ECGFinder.SampleSignal(particpant_num=ii, ecg_signal_dir=signal)
+
+        #Save signal details here since that should not change
+        pd.DataFrame(ECGFinder.ECG_dictionary).to_csv(os.path.join('ECG_Plotting', 'Signal Details', 'ecg_details.csv'), index=False)
 
     ECGFinder.SampleDistribution()
     ECGFinder.GroupDistribution(test_code)
 
-    #save both of the dictionarys
-    pd.DataFrame(ECGFinder.ECG_dictionary).to_csv(os.path.join('ECG_Plotting', 'Signal Details', 'ecg_details.csv'), index=False)
     pd.DataFrame(ECGFinder.plot_dictionary).to_csv(os.path.join('ECG_Plotting', 'Signal Details', 'plot_details.csv'), index=False)

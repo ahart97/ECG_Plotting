@@ -62,7 +62,7 @@ def create_chart_plots(ecg: np.ndarray, fs: float, save_path: str, title: str, e
 
     fig_bottom_mm = 5
     fig_top_mm = 5
-    fig_left_mm = 30
+    fig_left_mm = 1
     fig_right_mm = 1
 
     fig_height = chart_height + fig_top_mm + fig_bottom_mm
@@ -114,9 +114,6 @@ def create_chart_plots(ecg: np.ndarray, fs: float, save_path: str, title: str, e
 
     #mm height for the first quality annotation, shift down by one to look nice
     start_annotation_height = fig_height-fig_top_mm-(row_height/2) - 1
-
-    for ii in range(chart_rows):
-        plt.figtext(0.001, (start_annotation_height-row_height*ii)/fig_height, "Quality: ______", fontname='serif', fontsize=10)
 
     plt.savefig(os.path.join(save_path, title + '.png'))
     plt.close()

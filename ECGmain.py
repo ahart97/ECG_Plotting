@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
-from nwecg.ecg_quality import annotate_ecg_quality
+from nwecg.ecg_quality import annotate_ecg_quality, preprocess
 import nimbalwear
 import random
 from ecg_strip_charts import create_chart_plots
@@ -16,7 +16,13 @@ class ECGDictionary():
         #Sets the random state
         self.random_state = random_state
 
-    def LoadSignal(ecg_signal_dir: str):
+        #Define number of slides - number of plots will be that times 6
+        self.bout_time = 10 #seconds
+        self.num_slides = 50
+        self.plots_per_slide = 6
+        self.num_plots = self.num_slides*self.plots_per_slide
+
+    def LoadSignal(self, ecg_signal_dir: str):
         data = nimbalwear.Device()
         data.import_edf(file_path=ecg_signal_dir)
 
@@ -37,11 +43,15 @@ class ECGDictionary():
 
         _, _, SNR, _, _ = annotate_ecg_quality(ecg_signal=ecg, ecg_sample_rate=fs)
 
-        start_idx = 0
-        #Loop through 10 second bouts of the signal
-        for ii in range(int(fs*10), len(SNR), int(fs*10)):
+
+        start_idx = int(fs*self.bout_time)
+        bout_count = 0
+
+        #Loop through 10 second bouts of the signal - skip the first and last 10 seconds
+        for ii in range(int(fs*self.bout_time)*2, len(SNR), int(fs*self.bout_time)):
+
             stop_idx = ii
-            bout_code = chr(participant_num) + str(ii)
+            bout_code = 'P' + str(participant_num) + '_B' + str(bout_count)
 
             #Find the data based on the start and stop indices
             SNR_avg = np.nanmean(SNR[start_idx:stop_idx])
@@ -59,8 +69,9 @@ class ECGDictionary():
             self.ECG_dictionary['SNR_max'].append(SNR_max)
 
             start_idx = stop_idx+1
+            bout_count+=1
 
-        #TODO: Do we want pre-processed or raw ECG - will start with raw
+        #Going with preprocessed signals
 
     def SampleDistribution(self):
         """
@@ -70,23 +81,24 @@ class ECGDictionary():
         """
 
         def FindSNREligible(SNR_avg: list, SNR_min: list, SNR_max: list, SNR_range: tuple):
-            avg_check = SNR_avg > SNR_range[0] and SNR_avg < SNR_range[1]
-            min_check = SNR_min >= SNR_range[0] and SNR_min < SNR_range[1]
-            max_check = SNR_max > SNR_range[0] and SNR_max <= SNR_range[1]
+            avg_check = np.logical_and(SNR_avg > SNR_range[0], SNR_avg < SNR_range[1])
+            min_check = np.logical_and(SNR_min >= SNR_range[0], SNR_min < SNR_range[1])
+            max_check = np.logical_and(SNR_max > SNR_range[0], SNR_max <= SNR_range[1])
 
-            eligible = avg_check and min_check and max_check
+            eligible = np.logical_and(np.logical_and(avg_check, min_check), max_check)
             return eligible
 
-        def RandomSelect(eligible_values):
+        def RandomSelect(eligible_idxs):
             #Randomly sample the good indices
-            selected_bout = pd.DataFrame(eligible_values, columns=list(self.ECG_dictionary.keys())).sample(random_state=self.random_state)
-            return selected_bout.to_dict()
+            idx = np.random.choice(eligible_idxs)
+
+            selected_bout = {}
+            for key in self.ECG_dictionary.keys():
+                selected_bout[key] = self.ECG_dictionary[key][idx]
+            return selected_bout
 
         self.ECG_sample_dictionary = {'bout_code': [], 'signal_dirs': [], 'fs': [], 'start_idx': [], 'end_idx': [], 'SNR_avg': [], 'SNR_min': [], 'SNR_max': []}
 
-        #Define number of slides - number of plots will be that times 6
-        num_slides = 50
-        num_plots = num_slides*6
 
         #Smital cutoffs are 5 and 18 dB
         #15 to 18 is really that interesting range
@@ -95,22 +107,23 @@ class ECGDictionary():
         for ii in range(22):
             SNR_ranges.append((ii+1,ii+3))
 
-        for ii in range(num_plots):
+        for ii in range(self.num_plots):
             #Find the SNR range for this iteration
             #Weighting everything evenly
-            SNR_range = np.random.choice(SNR_ranges)
+            SNR_index = np.random.choice(len(SNR_ranges),1)[0]
+            SNR_range = SNR_ranges[SNR_index]
 
             #Find the indicies that are good based on the SNR range
-            SNR_eligibility = FindSNREligible(self.ECG_dictionary['SNR_avg'], self.ECG_dictionary['SNR_min'], self.ECG_dictionary['SNR_max'], SNR_range)
+            SNR_eligibility = FindSNREligible(np.array(list(self.ECG_dictionary['SNR_avg'].values())), np.array(list(self.ECG_dictionary['SNR_min'].values())), np.array(list(self.ECG_dictionary['SNR_max'].values())), SNR_range)
 
-            eligible_values = np.array(list(self.ECG_dictionary.values()))[SNR_eligibility]
+            eligible_idxs = np.where(SNR_eligibility)[0]
 
             #Sample from the bouts within the bin
-            selected_bout = RandomSelect(eligible_values)
+            selected_bout = RandomSelect(eligible_idxs)
 
             #Keep sampling until a bout is found that is not in the ECG_sample_directory already
             while selected_bout['bout_code'] in self.ECG_sample_dictionary['bout_code']:
-                selected_bout = RandomSelect()
+                selected_bout = RandomSelect(eligible_idxs)
 
             #Add the selected bout to the sample_dictionary
             self.mergeDictionary(selected_bout)
@@ -123,7 +136,7 @@ class ECGDictionary():
         dict_3 = {**dict_2}
         for key, value in dict_3.items():
             if key in self.ECG_sample_dictionary and key in dict_2:
-                combined_value = np.array([self.ECG_sample_dictionary[key], value])
+                combined_value = np.array([self.ECG_sample_dictionary[key], value], dtype=object)
                 dict_3[key] = np.hstack(combined_value)
         
         self.ECG_sample_dictionary = dict_3
@@ -134,13 +147,18 @@ class ECGDictionary():
         #Load the proper signal
         signal, fs = self.LoadSignal(self.ECG_sample_random['signal_dirs'][signal_idx])
 
+        #Preprocess the signal - like in the Smital
+        x = preprocess(signal, fs)
+
         #Record what signal was picked
         self.plot_dictionary['S'+str(signal_row+1)+'_code'].append(self.ECG_sample_random['bout_code'][signal_idx])
 
-        return signal[self.ECG_sample_random['start_idx'][ii]:self.ECG_sample_random['stop_idx'][ii]]
+        trimmed_x = x[int(self.ECG_sample_random['start_idx'][signal_idx]):int(self.ECG_sample_random['end_idx'][signal_idx]+1)]
+
+        return trimmed_x
 
 
-    def GroupDistribution(self, test_code):
+    def GroupDistribution(self, save_dir, test_code):
         """
         Groups the signals in the sample distribution for plotting
 
@@ -158,13 +176,13 @@ class ECGDictionary():
             plotting_signal = np.array([])
 
             #Populate the plotting signal with the next 6 signals
-            for jj in range(6):
+            for jj in range(self.plots_per_slide):
                 plotting_signal = np.append(plotting_signal, self.ProcessSignalPlotting(ii+jj, jj))
 
             #Reshape the plotting signal
-            plotting_signal = np.reshape(plotting_signal, (int(self.ECG_sample_random['fs'][ii]*10),6))
+            plotting_signal = np.reshape(plotting_signal, (int(self.ECG_sample_random['fs'][ii]*self.bout_time),self.plots_per_slide))
 
-            create_chart_plots(plotting_signal, self.ECG_sample_random['fs'][ii], 'Plots', test_code + str(plot_count))
+            create_chart_plots(plotting_signal, self.ECG_sample_random['fs'][ii], os.path.join(save_dir, 'Plots'), test_code + str(plot_count))
 
             #Save plot details
             self.plot_dictionary['plot_dirs'].append(os.path.join('Plots', test_code + str(plot_count) + '.png'))
@@ -176,29 +194,39 @@ if __name__ == '__main__':
 
     #Set the random seed (can have multiple variations)
     random_state = 1
-    test_code = chr(random_state)
+    test_code = chr(random_state+96)
     random.seed(random_state)
 
     ECGFinder = ECGDictionary(random_state=random_state)
 
     signals_dir = r'Y:\NiMBaLWEAR\OND09\wearables\device_edf_cropped'
+    current_dir = os.getcwd().split('\\ECG_Plotting')[0]
 
     #Not sure what SBH and TWH are???
     try:
-        ECGFinder.ECG_dictionary = pd.read_csv(os.path.join('ECG_Plotting', 'Signal Details', 'ecg_details.csv')).to_dict()
+        ECGFinder.ECG_dictionary = pd.read_csv(os.path.join(current_dir, 'Signal Details', 'ecg_details.csv')).to_dict()
     except:
         ecg_signal_paths = []
         for file in os.listdir(signals_dir):
-            if 'Chest.edf' in file and 'SBH' not in file and 'TWH' not in file:
+            if 'Chest.edf' in file and 'SBH' not in file and 'TWH' not in file and 'OND09_0003_01' not in file:
                 ecg_signal_paths.append(os.path.join(signals_dir, file))
 
         for ii, signal in enumerate(ecg_signal_paths):
-            ECGFinder.SampleSignal(particpant_num=ii, ecg_signal_dir=signal)
+            ECGFinder.SampleSignal(participant_num=ii, ecg_signal_dir=signal)
 
         #Save signal details here since that should not change
-        pd.DataFrame(ECGFinder.ECG_dictionary).to_csv(os.path.join('ECG_Plotting', 'Signal Details', 'ecg_details.csv'), index=False)
+        pd.DataFrame(ECGFinder.ECG_dictionary).to_csv(os.path.join(current_dir, 'Signal Details', 'ecg_details.csv'), index=False)
 
-    ECGFinder.SampleDistribution()
-    ECGFinder.GroupDistribution(test_code)
+    #Sample the ecg bouts
+    try:
+        ECGFinder.ECG_sample_dictionary = pd.read_csv(os.path.join(current_dir, 'Signal Details', 'ecg_sampled_' + test_code + '.csv')).to_dict()
+    except:
+        ECGFinder.SampleDistribution()
+        pd.DataFrame(ECGFinder.ECG_sample_dictionary).to_csv(os.path.join(current_dir, 'Signal Details', 'ecg_sampled_' + test_code + '.csv'), index=False)
 
-    pd.DataFrame(ECGFinder.plot_dictionary).to_csv(os.path.join('ECG_Plotting', 'Signal Details', 'plot_details.csv'), index=False)
+    #Group bouts and throw them in plots
+    try:
+        ECGFinder.plot_dictionary = pd.read_csv(os.path.join(current_dir, 'Signal Details', 'plot_details_' + test_code + '.csv')).to_dict()
+    except:
+        ECGFinder.GroupDistribution(current_dir, test_code)
+        pd.DataFrame(ECGFinder.plot_dictionary).to_csv(os.path.join(current_dir, 'Signal Details', 'plot_details_' + test_code + '.csv'), index=False)

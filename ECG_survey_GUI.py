@@ -39,7 +39,7 @@ class Survey:
         #Sets the list of ECG plot locations
         self.ecg_plots = []
         for ii, plot_name in enumerate(ecg_details['plot_dirs']):
-            self.ecg_plots.append(os.path.join(cwd, 'Plots', plot_name))
+            self.ecg_plots.append(os.path.join(cwd, plot_name))
         
         #Display welcome screen
         self.display_title()
@@ -70,8 +70,18 @@ class Survey:
         """
         Reset all the readio button options to zero before the next page
         """
-        for ii, option in enumerate(self.opt_selected):
-            self.opt_selected[ii].set(0)
+
+        try:
+            #Get the answers from the previous entry - if there are any
+            page_answers = self.results[self.ecg_plots[self.q_no]]
+
+            #Set the radio buttons to those answers
+            for ii, option in enumerate(self.opt_selected):
+                answer = np.where(self.quality_options==page_answers[ii])[0][0] + 1
+                self.opt_selected[ii].set(answer)
+        except:
+            for ii, option in enumerate(self.opt_selected):
+                self.opt_selected[ii].set(0)
 
     def BackStep(self):
         """
@@ -131,7 +141,8 @@ class Survey:
                 # destroys the GUI if through all of the signals
                 self.gui.destroy()
 
-                #TODO: Add call to save the dictionary here
+                #Saves once destroyed
+
             else:
                 # shows the next question
                 self.display_plot()
@@ -254,8 +265,8 @@ class Survey:
 if __name__ == '__main__':
     
     #Load in the ECG plots (would need to pass these in a folder with the .exe)
-    cwd = os.getcwd()
-    plot_details = pd.read_csv(os.path.join(cwd, 'Signal Details', 'plot_details.csv'))
+    cwd = os.getcwd().split('\\ECG_Plotting')[0]
+    plot_details = pd.read_csv(os.path.join(cwd, 'Signal Details', 'plot_details_a.csv'))
 
     # create an object of the Quiz Class.
     quiz = Survey(cwd, plot_details)

@@ -281,4 +281,4 @@ if __name__ == '__main__':
     #Open terminal in that dir
     #pyinstaller --onefile "ECG_survey_GUI.py"
 
-    #Then move the Plots and Signal Details folders in the dist dir with the .exe (just need these two folders and .exe)
+    #Then move the Plots and Signal Details (just plot details) folders in the dist dir with the .exe (just need these two folders and .exe)

@@ -9,3 +9,5 @@ crash.log
 *.png
 *.pickle
 *.csv
+
+ecg_strip_charts.py

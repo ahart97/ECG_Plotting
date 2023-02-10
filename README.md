@@ -25,6 +25,3 @@ The repository contains the following files:
 - ECGmain.py - Loops through the available ECG data from the [NiMBaL](https://github.com/nimbal) group, and samples 10 second bouts based on the predicted signal to noise ratio
 - ecg_strip_charts.py - Produces ECG strip chart plots that mimic the format used in clinic (not available in public repo due to privacy issues)
 
-## Contributing
-If you would like to contribute to this repository, please fork the repository and make the necessary changes. Then, submit a pull request for review.
-

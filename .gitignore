@@ -10,3 +10,4 @@ crash.log
 *.pickle
 *.csv
 
+ecg_strip_charts.py

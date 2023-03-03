@@ -10,7 +10,7 @@ class ECGDictionary():
     def __init__(self, random_state):
 
         #Dictionary for all of the data
-        self.ECG_dictionary = {'bout_code': [], 'signal_dirs': [], 'fs': [], 'start_idx': [], 'end_idx': [], 'SNR_avg': [], 'SNR_min': [], 'SNR_max': []}
+        self.ECG_dictionary = {'bout_code': [], 'signal_dirs': [], 'fs': [], 'start_idx': [], 'end_idx': [], 'SNR_avg': [], 'SNR_min': [], 'SNR_max': [], 'Amp_max': []}
         self.plot_dictionary = {'plot_dirs': [], 'S1_code': [], 'S2_code': [], 'S3_code': [], 'S4_code': [], 'S5_code': [], 'S6_code': []}
 
         #Sets the random state
@@ -21,8 +21,6 @@ class ECGDictionary():
         self.num_slides = 50
         self.plots_per_slide = 6
         self.num_plots = self.num_slides*self.plots_per_slide
-        self.overlapPlots = 84
-        self.nonOverlapPlots = self.num_plots-self.overlapPlots
 
         #Smital cutoffs are 5 and 18 dB
         #15 to 18 is really that interesting range
@@ -30,6 +28,11 @@ class ECGDictionary():
         self.SNR_ranges = []
         for ii in range(22):
             self.SNR_ranges.append((ii+1,ii+3))
+
+        self.evenBinCounts = 8
+        self.numBins = len(self.SNR_ranges)
+        self.overlapPlots = int(self.evenBinCounts*self.numBins)
+        self.nonOverlapPlots = self.num_plots-self.overlapPlots
 
     def LoadSignal(self, ecg_signal_dir: str):
         data = nimbalwear.Device()
@@ -50,7 +53,7 @@ class ECGDictionary():
 
         ecg, fs = self.LoadSignal(ecg_signal_dir)
 
-        _, _, SNR, _, _ = annotate_ecg_quality(ecg_signal=ecg, ecg_sample_rate=fs)
+        x, _, SNR, _, _ = annotate_ecg_quality(ecg_signal=ecg, ecg_sample_rate=fs)
 
 
         start_idx = int(fs*self.bout_time)
@@ -66,6 +69,7 @@ class ECGDictionary():
             SNR_avg = np.nanmean(SNR[start_idx:stop_idx])
             SNR_min = np.nanmin(SNR[start_idx:stop_idx])
             SNR_max = np.nanmax(SNR[start_idx:stop_idx])
+            amp_max = np.nanmax(np.abs(x[start_idx:stop_idx]))
 
             #Append everthing to the main dictionary
             self.ECG_dictionary['bout_code'].append(bout_code)
@@ -76,6 +80,7 @@ class ECGDictionary():
             self.ECG_dictionary['SNR_avg'].append(SNR_avg)
             self.ECG_dictionary['SNR_min'].append(SNR_min)
             self.ECG_dictionary['SNR_max'].append(SNR_max)
+            self.ECG_dictionary['Amp_max'].append(amp_max)
 
             start_idx = stop_idx+1
             bout_count+=1
@@ -98,7 +103,7 @@ class ECGDictionary():
             SNR_range = self.SNR_ranges[SNR_index]
 
             #Find the indicies that are good based on the SNR range
-            SNR_eligibility = self._FindSNREligible(np.array(list(self.ECG_dictionary['SNR_avg'].values())), np.array(list(self.ECG_dictionary['SNR_min'].values())), np.array(list(self.ECG_dictionary['SNR_max'].values())), SNR_range)
+            SNR_eligibility = self._FindSNREligible(np.array(list(self.ECG_dictionary['SNR_avg'].values())), np.array(list(self.ECG_dictionary['SNR_min'].values())), np.array(list(self.ECG_dictionary['SNR_max'].values())), np.array(list(self.ECG_dictionary['Amp_max'].values())), SNR_range)
 
             eligible_idxs = np.where(SNR_eligibility)[0]
 
@@ -106,19 +111,21 @@ class ECGDictionary():
             selected_bout = self._RandomSelect(eligible_idxs)
 
             #Keep sampling until a bout is found that is not in the ECG_sample_directory already
-            while selected_bout['bout_code'] in self.ECG_sample_dictionary['bout_code']:
+            while selected_bout['bout_code'] in self.ECG_sample_dictionary['bout_code'] or selected_bout['bout_code'] in self.ECG_core_dictionary['bout_code']:
                 selected_bout = self._RandomSelect(eligible_idxs)
 
             #Add the selected bout to the sample_dictionary
-            self.ECG_sample_dictionary = self.mergeDictionary(selected_bout)
+            self.ECG_sample_dictionary = self.mergeDictionary(self.ECG_sample_dictionary, selected_bout)
 
 
-    def _FindSNREligible(self, SNR_avg: list, SNR_min: list, SNR_max: list, SNR_range: tuple):
+    def _FindSNREligible(self, SNR_avg: list, SNR_min: list, SNR_max: list, amp_max: list, SNR_range: tuple):
         avg_check = np.logical_and(SNR_avg > SNR_range[0], SNR_avg < SNR_range[1])
         min_check = np.logical_and(SNR_min >= SNR_range[0], SNR_min < SNR_range[1])
         max_check = np.logical_and(SNR_max > SNR_range[0], SNR_max <= SNR_range[1])
 
-        eligible = np.logical_and(np.logical_and(avg_check, min_check), max_check)
+        amp_check = amp_max < 1850 #Found from probing one of the signals
+
+        eligible = np.logical_and(np.logical_and(np.logical_and(avg_check, min_check), max_check), amp_check)
         return eligible
 
 
@@ -132,6 +139,17 @@ class ECGDictionary():
         return selected_bout
 
 
+    def PullSiganl(self, signal_code):
+
+        index = np.where(np.array(list(self.ECG_dictionary['bout_code'].values())) == signal_code)[0][0]
+
+        signal, _ = self.LoadSignal(self.ECG_dictionary['signal_dirs'][index])
+
+        print(np.max(np.abs(signal[self.ECG_dictionary['start_idx'][index]:self.ECG_dictionary['end_idx'][index]])))
+
+        a= 1
+
+
     def SampleCoreSignals(self):
         """
         Pulls 84 signals, 4 from each bin, that will be used as an overlap between all raters
@@ -143,13 +161,17 @@ class ECGDictionary():
 
         for ii in range(self.overlapPlots):
             #Need to find four signals for each bin
-            SNR_index = int(ii/4)
+            SNR_index = int(ii/(self.overlapPlots/len(self.SNR_ranges)))
             SNR_range = self.SNR_ranges[SNR_index]
 
             #Find the indicies that are good based on the SNR range
-            SNR_eligibility = self._FindSNREligible(np.array(list(self.ECG_dictionary['SNR_avg'].values())), np.array(list(self.ECG_dictionary['SNR_min'].values())), np.array(list(self.ECG_dictionary['SNR_max'].values())), SNR_range)
+            SNR_eligibility = self._FindSNREligible(np.array(list(self.ECG_dictionary['SNR_avg'].values())), np.array(list(self.ECG_dictionary['SNR_min'].values())), np.array(list(self.ECG_dictionary['SNR_max'].values())), np.array(list(self.ECG_dictionary['Amp_max'].values())), SNR_range)
 
             eligible_idxs = np.where(SNR_eligibility)[0]
+
+            if len(eligible_idxs) < self.evenBinCounts:
+                print('Not enough eligible bouts')
+                exit()
 
             #Sample from the bouts within the bin
             selected_bout = self._RandomSelect(eligible_idxs)
@@ -159,8 +181,7 @@ class ECGDictionary():
                 selected_bout = self._RandomSelect(eligible_idxs)
 
             #Add the selected bout to the sample_dictionary
-            self.ECG_core_dictionary = self.mergeDictionary(selected_bout)
-
+            self.ECG_core_dictionary = self.mergeDictionary(self.ECG_core_dictionary, selected_bout)
 
 
     def mergeDictionary(self, dict_1, dict_2):
@@ -170,7 +191,12 @@ class ECGDictionary():
         dict_3 = {**dict_2}
         for key, value in dict_3.items():
             if key in dict_1 and key in dict_2:
-                combined_value = np.array([dict_1[key], value], dtype=object)
+                try:
+                    a_list = list(dict_1[key].values())
+                    b_list = list(value.values())
+                    combined_value = np.array([a_list, b_list], dtype=object)
+                except:
+                    combined_value = np.array([dict_1[key], value], dtype=object)
                 dict_3[key] = np.hstack(combined_value)
         
         return dict_3
@@ -251,6 +277,8 @@ if __name__ == '__main__':
         #Save signal details here since that should not change
         pd.DataFrame(ECGFinder.ECG_dictionary).to_csv(os.path.join(current_dir, 'Signal Details', 'ecg_details.csv'), index=False)
 
+    #ECGFinder.PullSiganl('P26_B34978')
+
     #Find the core sample
     try:
         ECGFinder.ECG_core_dictionary = pd.read_csv(os.path.join(current_dir, 'Signal Details', 'ecg_sampled_core.csv')).to_dict()
@@ -260,10 +288,10 @@ if __name__ == '__main__':
 
     #Sample the ecg bouts
     try:
-        ECGFinder.ECG_sample_dictionary = pd.read_csv(os.path.join(current_dir, 'Signal Details', 'ecg_sampled_' + test_code + '.csv')).to_dict()
+        ECGFinder.ECG_sample_dictionary = pd.read_csv(os.path.join(current_dir, 'Signal Details', 'ecg_sampled_random.csv')).to_dict()
     except:
         ECGFinder.SampleDistribution()
-        pd.DataFrame(ECGFinder.ECG_sample_dictionary).to_csv(os.path.join(current_dir, 'Signal Details', 'ecg_sampled_' + test_code + '.csv'), index=False)
+        pd.DataFrame(ECGFinder.ECG_sample_dictionary).to_csv(os.path.join(current_dir, 'Signal Details', 'ecg_sampled_random.csv'), index=False)
 
     #Group bouts and throw them in plots
     try:

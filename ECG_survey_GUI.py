@@ -22,6 +22,10 @@ class Survey:
         # set question number to -1 (starts at welcome page)
         self.q_no=-1
 
+        #Limit the sizes to keep things consitent
+        self.gui.minsize(1920, 1080)
+        self.gui.maxsize(1920,1080)
+
         # opt_selected holds an integer value which is used for
         # selected option in a question.
         #Make one for every radio button set (i.e. 6)
@@ -196,7 +200,7 @@ class Survey:
         img = ImageTk.PhotoImage(Image.open(self.ecg_plots[self.q_no]))
         ecg_plot = tk.Label(self.gui, image = img)
         ecg_plot.image=img
-        ecg_plot.place(relx=0.95,rely=0.5,anchor='e')
+        ecg_plot.place(relx=0.85,rely=0.5,anchor='e')
 
 
     def welcome_screen(self):

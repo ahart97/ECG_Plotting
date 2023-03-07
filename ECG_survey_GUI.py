@@ -200,7 +200,7 @@ class Survey:
         img = ImageTk.PhotoImage(Image.open(self.ecg_plots[self.q_no]))
         ecg_plot = tk.Label(self.gui, image = img)
         ecg_plot.image=img
-        ecg_plot.place(relx=0.85,rely=0.5,anchor='e')
+        ecg_plot.place(relx=0.75,rely=0.5,anchor='e')
 
 
     def welcome_screen(self):
@@ -229,7 +229,7 @@ class Survey:
         
         # position of the first option
         y_pos = 0.32 #Tune
-        x_pos = 0.05
+        x_pos = 0.10
         
         # adding the options to the list
         for ii in range(len(self.opt_selected)):
@@ -285,4 +285,4 @@ if __name__ == '__main__':
     #Open terminal in that dir
     #pyinstaller --onefile "ECG_survey_GUI.py"
 
-    #Then move the Plots and Signal Details (just plot details) folders in the dist dir with the .exe (just need these two folders and .exe)
+    #Then move the Plots and Signal Details (just plot details) folders in the dist dir with the .exe (just need these two folders and .exe, basically the dir folder here)

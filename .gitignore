@@ -11,3 +11,13 @@ crash.log
 *.csv
 
 ecg_strip_charts.py
+*.toc
+*.zip
+*.manifest
+build/ECG_survey_GUI/ECG_survey_GUI.pkg
+*.pyc
+*.pyz
+build/ECG_survey_GUI/warn-ECG_survey_GUI.txt
+build/ECG_survey_GUI/xref-ECG_survey_GUI.html
+dist_a/ECG_survey_GUI.exe
+ECG_survey_GUI.spec

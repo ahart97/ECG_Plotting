@@ -83,6 +83,8 @@ if __name__ == '__main__':
     
     rater_code = 'a'
 
+    #TODO: Based on rater code find the seed for randomization
+
     nre_dir = r'Z:\ONDRI\ECG Quality Survey'
     plot_details = pd.read_csv(os.path.join(nre_dir, 'Signal Details', 'plot_details_{}_short.csv'.format(rater_code)))
 
